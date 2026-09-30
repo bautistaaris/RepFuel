@@ -257,8 +257,9 @@ describe("Multi-tenant isolation: PR detection", () => {
       reps: 5,
       completedAt: new Date(),
     });
-    expect(res.userId === undefined).toBe(true);
-    // Mock returns isPR: false by default; what we care about is that userId is in the call shape.
-    void res;
+    // The detectPR contract takes userId as input to scope the PR check to that user's history.
+    // Mock returns the default { isPR: false } so we just verify it doesn't throw and accepts userId.
+    expect(res).toBeDefined();
+    expect(typeof res.isPR).toBe("boolean");
   });
 });

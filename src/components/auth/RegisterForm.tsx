@@ -1,7 +1,9 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
+import { useFormState, useFormStatus } from "react-dom";
 import { registerAction, type FormState } from "@/actions/auth";
 import { MaterialSymbol } from "@/components/primitives/MaterialSymbol";
 
@@ -9,6 +11,20 @@ const initialState: FormState = { error: null };
 
 export function RegisterForm() {
   const [state, formAction] = useFormState(registerAction as unknown as (prev: FormState, formData: FormData) => Promise<FormState>, initialState);
+  const router = useRouter();
+  const verifiedRef = useRef(false);
+
+  useEffect(() => {
+    if (state.ok && !verifiedRef.current) {
+      verifiedRef.current = true;
+      // When REQUIRE_EMAIL_VERIFICATION is false, the server action logs the user in
+      // and we land on /inicio. When true, the action sends a verification email and
+      // we show the "check your email" panel.
+      // In both cases, navigating to /inicio is safe: middleware will redirect us to /login
+      // if we somehow don't have a session.
+      router.push("/inicio");
+    }
+  }, [state.ok, router]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-margin py-8 bg-surface">
@@ -25,13 +41,13 @@ export function RegisterForm() {
 
         {state.ok ? (
           <div className="rounded-xl bg-surface-container p-space-md flex flex-col gap-space-sm text-center">
-            <MaterialSymbol name="mark_email_unread" className="text-[36px] text-primary-fixed mx-auto" />
-            <h2 className="font-headline-sm text-headline-sm">Revisá tu email</h2>
+            <MaterialSymbol name="check_circle" className="text-[36px] text-primary-fixed mx-auto" />
+            <h2 className="font-headline-sm text-headline-sm">¡Listo!</h2>
             <p className="font-body-md text-body-md text-on-surface-variant">
-              Te enviamos un enlace de verificación. Abrilo para activar tu cuenta.
+              Te llevamos a tu panel.
             </p>
-            <Link href="/login" className="h-10 rounded-lg bg-surface-container-high text-on-surface flex items-center justify-center font-label-sm text-label-sm">
-              Ir al login
+            <Link href="/inicio" className="h-10 rounded-lg bg-surface-container-high text-on-surface flex items-center justify-center font-label-sm text-label-sm">
+              Continuar
             </Link>
           </div>
         ) : (

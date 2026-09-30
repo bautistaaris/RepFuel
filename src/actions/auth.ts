@@ -27,6 +27,7 @@ export async function registerAction(_prev: FormState, formData: FormData): Prom
   if ((process.env.ALLOW_PUBLIC_REGISTRATION ?? "true").toLowerCase() !== "true") {
     return { error: "El registro está cerrado. Pedí invitación al administrador." };
   }
+  void _prev;
 
   const parsed = RegisterSchema.safeParse({
     name: formData.get("name"),
@@ -87,6 +88,11 @@ export async function registerAction(_prev: FormState, formData: FormData): Prom
     subject: "Verificá tu email en RepFuel",
     text: `Bienvenido a RepFuel.\n\nVerificá tu email abriendo este enlace (válido 24h):\n${link}\n\nSi no creaste esta cuenta, podés ignorar este mensaje.`,
   });
+
+  // If email verification is disabled, signal client to navigate.
+  // We avoid redirect() inside the action because it triggers an internal Next.js URL
+  // construction that can race with route caching in dev. The client component
+  // performs the navigation in the success branch.
 
   return { error: null, ok: true };
 }

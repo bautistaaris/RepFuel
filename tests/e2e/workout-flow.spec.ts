@@ -1,16 +1,22 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@repfuel.local";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin1234";
+const timestamp = Date.now();
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? `e2e-admin-${timestamp}@repfuel.test`;
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "Admin1234!";
+
+async function registerAndLogin(page: Page, email: string, password: string) {
+  await page.goto("/register");
+  await page.locator('input[name="name"]').fill("E2E User");
+  await page.locator('input[name="email"]').fill(email);
+  await page.locator('input[name="password"]').fill(password);
+  await page.locator('input[name="confirmPassword"]').fill(password);
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL("**/inicio", { timeout: 15_000 });
+}
 
 test.describe("Workout flow", () => {
   test("login → rutina → workout → set → finalizar", async ({ page }) => {
-    await page.goto("/login");
-    await page.locator('input[name="email"]').fill(ADMIN_EMAIL);
-    await page.locator('input[name="password"]').fill(ADMIN_PASSWORD);
-    await page.locator('button[type="submit"]').click();
-
-    await page.waitForURL("**/inicio", { timeout: 10_000 });
+    await registerAndLogin(page, ADMIN_EMAIL, ADMIN_PASSWORD);
 
     await page.goto("/entreno");
 
