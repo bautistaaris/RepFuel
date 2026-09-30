@@ -1,77 +1,101 @@
 # RepFuel
 
-PWA privada para registrar entrenamientos de fuerza, nutrición diaria, peso corporal y progreso. Mobile-first, instalable, single-user, self-hosted.
+PWA privada, mobile-first, multi-usuario para registrar entrenamientos de fuerza, nutrición diaria, peso corporal y progreso. Instalable desde Safari/Chrome. Diseñada para uso personal, con acceso por dominio público + HTTPS.
 
 ## Stack
 
-- Next.js 14 (App Router) + React 18 + TypeScript estricto
-- Tailwind CSS con tokens del diseño Stitch
-- Prisma + SQLite (portable a Postgres)
-- bcryptjs + cookie de sesión HMAC firmada + CSRF
-- Zod para validación
-- Recharts para gráficos
-- Vitest (unit) + Playwright (E2E)
-- Docker + docker-compose con volumen persistente
+- **Next.js 14** (App Router) + **React 18** + **TypeScript estricto**
+- **Tailwind CSS** con tokens del diseño Stitch
+- **PostgreSQL** + Prisma (portable a Neon / Supabase / self-hosted)
+- **bcryptjs** + cookie HMAC HttpOnly + CSRF
+- **Zod** para validación
+- **Recharts** para gráficos
+- **Vitest** (unit) + **Playwright** (E2E)
+- **Docker** + **docker-compose** (app + postgres) para dev/self-host
+- **Vercel** ready para producción con Neon/Supabase
 
 ## Características
 
-- Rutinas: crear, duplicar, reordenar, eliminar
-- Ejercicios: biblioteca seed (35+) + creación de personalizados
-- Workout activo: stopwatch, sets con check, rest timer **persistente** (se recupera si cerrás la app)
-- PRs automáticos: heavier weight, max volume, max reps para un peso
-- Nutrición: registro diario por tomas, parser de NL (manual ahora, OpenAI opcional)
-- Comidas y alimentos frecuentes
-- Peso corporal con tendencia 7d/30d + media móvil 7d
-- Dashboard de progreso: 7D / 30D / 3M / 6M / 1A / Todo
-- Calendario mensual con resumen por día
-- Backup JSON con versión + import con backup automático previo
-- PWA: instalable en iPhone/Android, manifest + service worker
-- Modo offline parcial (assets estáticos cacheados; nunca se cachea `/api` ni navegación autenticada)
+- **Multi-usuario** con registro público configurable (`ALLOW_PUBLIC_REGISTRATION`).
+- **Auth completo**: register, login, logout, email verification, password reset.
+- **Rutinas**: crear, duplicar, reordenar, eliminar.
+- **Ejercicios**: biblioteca global + personalizados por usuario.
+- **Workout activo** con stopwatch, **rest timer persistente** (timestamps server-side).
+- **PR detection**: HEAVIEST, MAX_VOLUME, MAX_REPS_FOR_WEIGHT — aislado por usuario.
+- **Nutrición**: food entries por toma, parser NL (ManualNutritionParser + OpenAI opcional).
+- **Saved foods / saved meals** privados por usuario.
+- **Objetivos diarios** configurables.
+- **Body weight** con moving avg 7d + deltas 7d/30d + chart.
+- **Progress dashboard** con tabs 7D/30D/3M/6M/1A/Todo.
+- **Calendario mensual** + resumen por día.
+- **Backup JSON v2** solo del usuario (excluye passwordHash, tokens, otros usuarios).
+- **Account deletion** con confirmación fuerte.
+- **PWA** instalable, manifest + service worker sin cache privado cross-user.
+- **Multi-tenant isolation** verificada por tests unitarios + E2E.
 
 ## Privacidad
 
-- Sin signup público. Único admin creado por CLI.
-- `robots.txt: Disallow: /`, `<meta name="robots" content="noindex,nofollow,noarchive">` en todas las páginas.
+- Sin signup público por defecto configurable (`ALLOW_PUBLIC_REGISTRATION=false` para invite-only).
+- `robots.txt: Disallow: /`, `<meta name="robots" content="noindex,nofollow,noarchive">` global.
 - Contraseña hasheada con bcrypt rounds 12.
 - Cookie `rf_session` HttpOnly + Secure (en prod) + SameSite=Lax + HMAC firmada.
-- CSRF double-submit cookie para mutaciones.
-- Rate limit en `/login`: 5 intentos / 15 min por IP+email.
+- Email verification tokens y password reset tokens hasheados en DB (HMAC), single-use, con TTL.
+- CSP estricta (sin `unsafe-eval`, default-src 'self').
+- X-Frame-Options DENY, X-Content-Type-Options nosniff, Referrer-Policy no-referrer, Permissions-Policy minimal.
+- Service Worker NO cachea páginas autenticadas ni `/api/*`. Logout dispara `CLEAR_PRIVATE_CACHE`.
 
 ## Requisitos
 
-- Node.js >= 20
-- npm
-- Docker (opcional, recomendado para producción)
+- **Node.js** >= 20
+- **PostgreSQL** >= 14 (local con Docker, Neon, Supabase o cualquier proveedor)
+- **npm** o pnpm
+- **Docker** (opcional, recomendado para dev/self-host)
 
 ## Instalación
 
-### 1. Clonar y configurar
+### 1. Variables de entorno
 
 ```bash
-git clone <repo>
-cd repfuel
 cp .env.example .env
 ```
 
-Editar `.env` y completar:
-- `AUTH_SECRET`: generá con `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
-- `ADMIN_EMAIL` y `ADMIN_PASSWORD`
+Editar `.env`:
 
-### 2. Instalar y migrar
+```env
+DATABASE_URL="postgresql://repfuel:repfuel@localhost:5432/repfuel"
+AUTH_SECRET="$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")"
+ALLOW_PUBLIC_REGISTRATION="true"
+REQUIRE_EMAIL_VERIFICATION="false"
+EMAIL_PROVIDER="console"          # o "resend"
+EMAIL_FROM="RepFuel <noreply@repfuel.app>"
+EMAIL_API_KEY=""                   # si usás Resend
+APP_URL="http://localhost:3000"
+```
+
+### 2. Dev con Docker (recomendado)
+
+```bash
+docker compose up -d postgres      # solo postgres, la app la corrés localmente
+npm install
+npm run db:migrate
+npm run dev                         # http://localhost:3000
+```
+
+O todo el stack:
+
+```bash
+docker compose up -d                # app + postgres
+docker compose exec app npx prisma migrate deploy
+```
+
+### 3. Dev local sin Docker
+
+Instalar PostgreSQL localmente, setear `DATABASE_URL`, luego:
 
 ```bash
 npm install
 npm run db:migrate
-npm run db:seed
-```
-
-`db:seed` crea los ejercicios iniciales y el usuario admin.
-
-### 3. Desarrollo
-
-```bash
 npm run dev
-# http://localhost:3000
 ```
 
 ### 4. Producción local
@@ -81,119 +105,146 @@ npm run build
 npm run start
 ```
 
-### 5. Docker
+### 5. Deploy en Vercel + Neon (recomendado)
 
-```bash
-docker compose up -d
-```
+1. Crear proyecto en [Neon](https://neon.tech), obtener `DATABASE_URL`.
+2. Push del repo a GitHub.
+3. Crear proyecto en [Vercel](https://vercel.com), importar el repo.
+4. Configurar variables de entorno en Vercel:
+   - `DATABASE_URL` (de Neon)
+   - `AUTH_SECRET` (32 chars random)
+   - `ALLOW_PUBLIC_REGISTRATION`
+   - `REQUIRE_EMAIL_VERIFICATION`
+   - `EMAIL_PROVIDER`, `EMAIL_FROM`, `EMAIL_API_KEY` (si usás Resend)
+   - `NUTRITION_AI_*` (opcional)
+   - `APP_URL` (URL de producción, ej `https://repfuel.app`)
+5. Build command: `prisma generate && next build` (definido en Vercel config o `package.json`).
+6. **Migraciones**: NO ejecutar migraciones automáticamente en cada request. Conectar vía `vercel env pull` y correr localmente contra la DB de producción:
 
-El contenedor expone el puerto 3000. La DB se persiste en el volumen `rep-fuel-data`.
+   ```bash
+   vercel env pull .env.production
+   DATABASE_URL=$(grep DATABASE_URL .env.production | cut -d= -f2-) npx prisma migrate deploy
+   ```
 
-Para aplicar migraciones dentro del contenedor:
+   O vía GitHub Actions con un job de release que corra `prisma migrate deploy` antes del deploy.
 
-```bash
-docker compose exec repfuel npx prisma migrate deploy
-docker compose exec repfuel node -e "require('child_process').execSync('npx tsx prisma/seed.ts', {stdio:'inherit'})"
-```
+7. **Dominio**: en Vercel → Settings → Domains, agregar `repfuel.app` (o subdominio). HTTPS automático.
 
-### 6. Acceder desde el celular con Tailscale
+### 6. Acceder desde el celular
 
-1. Instalar Tailscale en la PC/servidor y en el celular.
-2. Login con la misma cuenta en ambos.
-3. La PC queda accesible vía su IP Tailscale (ej. `100.x.y.z`).
-4. Desde el celular: `http://100.x.y.z:3000`.
-5. En iPhone, Safari → Compartir → "Añadir a pantalla de inicio" para instalar la PWA.
+Cualquier red funciona (WiFi, 4G/5G, universidad, gimnasio). Tailscale ya NO es necesario.
 
-Alternativa: correr Tailscale en el host Docker y exponer solo en la interfaz `tailscale0`.
+Para iPhone: Safari → Compartir → "Añadir a pantalla de inicio" para instalar la PWA.
 
 ## Variables de entorno
 
 | Variable | Descripción |
 |---|---|
-| `DATABASE_URL` | `file:./data/repfuel.db` (default) |
-| `AUTH_SECRET` | HMAC secret para firmar cookies (>= 32 chars random) |
-| `ADMIN_EMAIL` | Email del admin (seed) |
-| `ADMIN_PASSWORD` | Contraseña del admin (seed) — se hashea con bcrypt |
-| `NUTRITION_AI_PROVIDER` | `none` (default) \| `openai` |
-| `NUTRITION_AI_API_KEY` | API key (solo si provider=openai) |
-| `NUTRITION_AI_MODEL` | Modelo OpenAI (default `gpt-4o-mini`) |
-| `APP_URL` | URL pública (para OG) |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `AUTH_SECRET` | HMAC secret para sesiones y tokens (>= 32 random chars) |
+| `ALLOW_PUBLIC_REGISTRATION` | `true` (público) o `false` (invite-only) |
+| `REQUIRE_EMAIL_VERIFICATION` | `true` para requerir email verificado |
+| `EMAIL_PROVIDER` | `console` (dev) o `resend` (prod) |
+| `EMAIL_FROM` | From header (ej: `RepFuel <noreply@repfuel.app>`) |
+| `EMAIL_API_KEY` | API key de Resend si provider=resend |
+| `NUTRITION_AI_PROVIDER` | `none` o `openai` |
+| `NUTRITION_AI_API_KEY` | OpenAI key |
+| `NUTRITION_AI_MODEL` | default `gpt-4o-mini` |
+| `APP_URL` | URL pública (usada en emails) |
 
 ## Backup
 
-- Exportar: Settings → Backup → Exportar (descarga JSON).
-- Importar: Settings → Backup → Importar. Antes de importar se crea un backup automático en `backups/pre-import-<timestamp>.json`.
-- Versionado: el JSON incluye `version`. Refusar versiones mayores.
+- **Export**: Settings → Datos → Exportar (descarga JSON v2 con solo tus datos).
+- **Import**: Settings → Datos → Importar. Antes de importar crea `backups/pre-import-<timestamp>.json`.
+- Lo que **NO** se exporta: `passwordHash`, tokens, sesiones, datos de otros usuarios.
 
 ## Tests
 
 ```bash
 npm run lint
 npm run typecheck
-npm test                 # unit (vitest)
-npm run test:e2e         # E2E (playwright, requiere dev server)
-npm run test:e2e:install # descargar chromium la primera vez
+npm test                 # 41 unit tests
+npm run test:e2e         # Playwright E2E
+npm run test:e2e:install # primera vez: chromium
 ```
 
 ## Estructura
 
 ```
 prisma/
-  schema.prisma
-  seed.ts
+  schema.prisma          # PostgreSQL multi-tenant
+  seed.ts                # global exercises + admin opcional
 public/
   manifest.webmanifest
-  sw.js
+  sw.js                  # multi-user cache strategy
   icons/
 src/
-  app/                   # App Router
-    api/health/
-    inicio/              # home
-    entreno/             # rutinas + active workout
-    dieta/               # nutrición + objetivos + guardados
-    progreso/            # dashboard + peso + workouts/[id]
-    calendario/          # mes + día
+  app/
+    api/health/          # health endpoint
+    inicio/              # home dashboard
+    login/, register/, forgot-password/, reset-password/, verify-email/
+    entreno/             # rutinas + workout activo
+    dieta/               # nutrition
+    progreso/            # dashboards
+    calendario/
     biblioteca/          # ejercicios
-    settings/
-    login/
-  components/
-    layout/              # AppShell, BottomNav, AppHeader
-    ui/                  # Button, Card, Input, ProgressBar, ...
-    workouts/            # ActiveWorkout
-    nutrition/           # DietaContent, ...
-    progress/            # Charts, ...
-    routines/            # RoutineForm, RoutineEditor, RoutineActions
-    exercises/
-    settings/
-    calendar/
-    auth/
-    primitives/
+    settings/            # account settings
+  components/            # UI, auth, workouts, nutrition, progress, etc.
   lib/
-    auth.ts
-    session.ts
-    csrf.ts (vía session)
+    auth.ts              # bcrypt helpers
+    session.ts           # Node.js session cookies
+    session-edge.ts      # Edge session decoder for middleware
+    csrf.ts (en session)
+    crypto.ts            # token hashing, email normalization
+    email.ts             # EmailService interface + Console/Resend
     rate-limit.ts
-    db.ts
-    parsers/             # NutritionParser interface + manual + openai
-    services/            # workouts, routines, exercises, nutrition, pr, home, bodyWeight, backup
+    db.ts                # Prisma singleton
+    auth-user.ts         # requireUser/getCurrentUser
+    data-access.ts       # getOwnedX helpers
+    parsers/             # NutritionParser interface + Manual + OpenAI
+    services/            # business logic (workouts, routines, exercises, ...)
     utils/               # dates, format, volume, cn
-    validation/
-  actions/               # server actions
-  styles/globals.css
-  middleware.ts
+  actions/               # server actions por módulo
+  middleware.ts          # CSP, security headers, auth gating, public paths
 tests/
   unit/
   e2e/
+  stubs/server-only.ts    # vitest stub
 ```
 
 ## Decisiones técnicas clave
 
-- **App Router** con Server Components para datos y Client Components para interacción (timer, inputs).
-- **Server Actions** con validación Zod en server para todas las mutaciones.
-- **Optimistic UI** en logging de sets (rollback on error).
-- **Rest timer** persistido como timestamp (`restStartedAt` + `restDuration`) — sobrevive cierre de app.
-- **Volume** = Σ(weight × reps) sobre sets completados, calculado server-side.
-- **PR detection** corre al marcar set como completo; tipos: HEAVIEST, MAX_VOLUME, MAX_REPS_FOR_WEIGHT.
+- **PostgreSQL** vía Prisma. SQLite quedó como referencia histórica.
+- **Multi-tenant por userId**: cada query privada filtra por `userId` desde sesión.
+- **Tokens hasheados**: EmailVerification y PasswordReset se guardan como `HMAC(token)` en DB.
+- **Rest timer**: timestamps server-side. Recupera correctamente si la app se cierra.
+- **Volume** = Σ(weight × reps) sobre sets completados.
+- **PR detection** siempre contra el historial del mismo usuario.
+- **Backup v2**: solo datos del requesting user. El `user.id` en el JSON es informativo; el import siempre asigna a `currentUser.id`.
+- **Service Worker** agresivamente bypass para páginas autenticadas y API.
+
+## Seguridad
+
+### Defensa en profundidad
+
+1. **Middleware** bloquea rutas no autenticadas.
+2. **Server actions / API** verifican sesión con `requireUser`.
+3. **Service layer** filtra por `userId` en cada query.
+4. **Data-access helpers** (`getOwnedX`) usan `notFound()` en lugar de `forbidden()` para no filtrar existencia de recursos.
+5. **Prisma** con índices apropiados para queries rápidas por userId.
+
+### Reporte de seguridad
+
+Tests cubiertos:
+
+- Cross-user workout completion → rechaza
+- Cross-user routine deletion → rechaza
+- Cross-user routine creation conflict (same name) → permitido
+- Cross-user food entry listing → aislado
+- Cross-user body weight → aislado
+- Cross-user PR detection → aislado por userId
+- Cross-user backup export → solo datos del requesting user
+- Backup import con user.id adulterado → asigna a currentUser.id
 
 ## Licencia
 

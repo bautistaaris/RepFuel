@@ -1,5 +1,7 @@
+// Global seed: only creates GLOBAL exercises (userId=null). Safe to run in production.
+// To create the first admin user, run `npm run seed:admin` (see scripts/seed-admin.ts).
+
 import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -48,72 +50,15 @@ const EXERCISES: Array<{
 ];
 
 async function main() {
-  console.log("Iniciando seed...");
-
   for (const ex of EXERCISES) {
     const existing = await prisma.exercise.findFirst({
-      where: { name: ex.name, isCustom: false },
+      where: { name: ex.name, userId: null },
     });
     if (!existing) {
-      await prisma.exercise.create({
-        data: { ...ex, isCustom: false },
-      });
+      await prisma.exercise.create({ data: { ...ex, userId: null, isCustom: false } });
     }
   }
-  console.log(`✓ ${EXERCISES.length} ejercicios seeded`);
-
-  const adminEmail = process.env.ADMIN_EMAIL;
-  const adminPassword = process.env.ADMIN_PASSWORD;
-
-  if (adminEmail && adminPassword) {
-    const existingUser = await prisma.user.findUnique({ where: { email: adminEmail } });
-    if (!existingUser) {
-      const passwordHash = await bcrypt.hash(adminPassword, 12);
-      await prisma.user.create({
-        data: {
-          email: adminEmail,
-          passwordHash,
-          name: "Admin",
-        },
-      });
-      console.log(`✓ Admin user creado: ${adminEmail}`);
-    } else {
-      console.log(`✓ Admin user ya existe: ${adminEmail}`);
-    }
-  } else {
-    console.log("⚠ ADMIN_EMAIL / ADMIN_PASSWORD no seteados — no se crea admin");
-  }
-
-  const users = await prisma.user.findMany();
-  for (const user of users) {
-    const hasTarget = await prisma.dailyNutritionTarget.findUnique({ where: { userId: user.id } });
-    if (!hasTarget) {
-      await prisma.dailyNutritionTarget.create({
-        data: {
-          userId: user.id,
-          calories: 2800,
-          protein: 160,
-          carbs: 350,
-          fat: 80,
-        },
-      });
-    }
-    const hasSettings = await prisma.appSetting.findUnique({ where: { userId: user.id } });
-    if (!hasSettings) {
-      await prisma.appSetting.create({
-        data: {
-          userId: user.id,
-          units: "metric",
-          theme: "dark",
-          locale: "es",
-          weeklyGoal: 4,
-        },
-      });
-    }
-  }
-
-  console.log("✓ Targets y settings inicializados");
-  console.log("Seed completo.");
+  console.log(`✓ ${EXERCISES.length} global exercises`);
 }
 
 main()
@@ -121,6 +66,4 @@ main()
     console.error(e);
     process.exit(1);
   })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .finally(() => prisma.$disconnect());
