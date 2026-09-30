@@ -53,6 +53,13 @@ export async function registerAction(_prev: FormState, formData: FormData): Prom
     return { error: "Las contraseñas no coinciden" };
   }
 
+  const h = await headers();
+  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("cf-connecting-ip") ?? "local";
+  const limit = await checkLoginRateLimit(`register:${email}:${ip}`);
+  if (!limit.ok) {
+    return { error: `Demasiados intentos. Esperá ${Math.ceil(limit.retryAfterSec / 60)} min.` };
+  }
+
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     return { error: "Ya existe una cuenta con ese email" };
@@ -142,8 +149,8 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
   const email = normalizeEmail(parsed.data.email);
   const h = await headers();
-  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
-  const limit = checkLoginRateLimit(`${email}:${ip}`);
+  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("cf-connecting-ip") ?? "local";
+  const limit = await checkLoginRateLimit(`${email}:${ip}`);
   if (!limit.ok) {
     return { error: `Demasiados intentos. Esperá ${Math.ceil(limit.retryAfterSec / 60)} min.` };
   }
@@ -158,7 +165,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     return { error: "Credenciales incorrectas" };
   }
 
-  resetLoginRateLimit(`${email}:${ip}`);
+  await resetLoginRateLimit(`${email}:${ip}`);
   const isHttps = (h.get("x-forwarded-proto") ?? "").toLowerCase() === "https";
   await setSession(user.id, isHttps);
   revalidatePath("/");
@@ -173,6 +180,14 @@ export async function logoutAction(): Promise<void> {
 export async function requestPasswordResetAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const email = normalizeEmail(String(formData.get("email") ?? ""));
   if (!isValidEmail(email)) {
+    return { error: null, ok: true };
+  }
+
+  const h = await headers();
+  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("cf-connecting-ip") ?? "local";
+  const limit = await checkLoginRateLimit(`forgot:${email}:${ip}`);
+  if (!limit.ok) {
+    // Don't leak rate-limit; return generic success.
     return { error: null, ok: true };
   }
 

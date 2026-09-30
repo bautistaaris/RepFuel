@@ -1,33 +1,19 @@
-type Bucket = { count: number; resetAt: number };
-const buckets = new Map<string, Bucket>();
+import "server-only";
+import { checkRateLimit as pgCheck, resetRateLimit as pgReset } from "./rate-limit-pg";
+import { checkLoginRateLimit as memCheck, resetLoginRateLimit as memReset } from "./rate-limit";
 
-const WINDOW_MS = 15 * 60 * 1000;
-const MAX_REQUESTS = 5;
+export type RateLimitResult = { ok: boolean; retryAfterSec: number };
 
-export function checkLoginRateLimit(key: string): { ok: boolean; retryAfterSec: number } {
-  const now = Date.now();
-  const bucket = buckets.get(key);
-  if (!bucket || bucket.resetAt < now) {
-    buckets.set(key, { count: 1, resetAt: now + WINDOW_MS });
-    return { ok: true, retryAfterSec: 0 };
-  }
-  if (bucket.count >= MAX_REQUESTS) {
-    return { ok: false, retryAfterSec: Math.ceil((bucket.resetAt - now) / 1000) };
-  }
-  bucket.count += 1;
-  return { ok: true, retryAfterSec: 0 };
+function isPostgresBackend(): boolean {
+  return (process.env.RATE_LIMIT_BACKEND ?? "").toLowerCase() === "postgres";
 }
 
-export function resetLoginRateLimit(key: string): void {
-  buckets.delete(key);
+export async function checkLoginRateLimit(key: string): Promise<RateLimitResult> {
+  if (isPostgresBackend()) return pgCheck(key);
+  return memCheck(key);
 }
 
-setInterval(
-  () => {
-    const now = Date.now();
-    for (const [k, v] of buckets.entries()) {
-      if (v.resetAt < now) buckets.delete(k);
-    }
-  },
-  60 * 1000,
-).unref?.();
+export async function resetLoginRateLimit(key: string): Promise<void> {
+  if (isPostgresBackend()) return pgReset(key);
+  memReset(key);
+}

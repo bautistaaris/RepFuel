@@ -1,0 +1,96 @@
+version: "3.9"
+
+networks:
+  frontend:
+    driver: bridge
+    name: repfuel-frontend
+  backend:
+    driver: bridge
+    internal: true
+    name: repfuel-backend
+
+volumes:
+  repfuel-postgres-data:
+  repfuel-backups:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: repfuel-postgres
+    restart: unless-stopped
+    networks:
+      - backend
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-repfuel}
+      POSTGRES_USER: ${POSTGRES_USER:-repfuel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - repfuel-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-repfuel} -d ${POSTGRES_DB:-repfuel}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: repfuel-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - frontend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-repfuel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-repfuel}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      ALLOW_PUBLIC_REGISTRATION: ${ALLOW_PUBLIC_REGISTRATION:-true}
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-false}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+      EMAIL_FROM: ${EMAIL_FROM:-RepFuel <noreply@repfuel.app>}
+      EMAIL_API_KEY: ${EMAIL_API_KEY:-}
+      NUTRITION_AI_PROVIDER: ${NUTRITION_AI_PROVIDER:-none}
+      NUTRITION_AI_API_KEY: ${NUTRITION_AI_API_KEY:-}
+      NUTRITION_AI_MODEL: ${NUTRITION_AI_MODEL:-gpt-4o-mini}
+      APP_URL: ${APP_URL:?APP_URL is required}
+      TRUST_PROXY: "true"
+      RATE_LIMIT_BACKEND: postgres
+      BACKUP_DIR: /srv/repfuel/backups
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: repfuel-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    networks:
+      - frontend
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}
+    depends_on:
+      app:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

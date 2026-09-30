@@ -270,3 +270,13 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
 }
+
+model RateLimitAttempt {
+  id        String   @id @default(cuid())
+  key       String
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+  @@index([createdAt])
+}

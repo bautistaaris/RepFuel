@@ -51,7 +51,7 @@ export function decodeSessionToken(token: string): SessionPayload | null {
   }
 }
 
-export async function setSession(userId: string, secure: boolean = process.env.NODE_ENV === "production"): Promise<void> {
+export async function setSession(userId: string, secure: boolean = isHttpsFromEnv()): Promise<void> {
   const token = createSessionToken(userId);
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
@@ -62,6 +62,13 @@ export async function setSession(userId: string, secure: boolean = process.env.N
     maxAge: SESSION_MAX_AGE,
   });
   await ensureCsrfCookie();
+}
+
+function isHttpsFromEnv(): boolean {
+  // If TRUST_PROXY is enabled, we assume HTTPS because the public edge is HTTPS
+  // (Cloudflare Tunnel) and we never see raw HTTP from the internet.
+  if (process.env.TRUST_PROXY === "true") return true;
+  return process.env.NODE_ENV === "production";
 }
 
 export async function getSessionUserId(): Promise<string | null> {
