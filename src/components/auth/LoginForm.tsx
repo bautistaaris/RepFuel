@@ -1,19 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useFormState } from "react-dom";
 import { loginAction } from "@/actions/auth";
+import { MaterialSymbol } from "@/components/primitives/MaterialSymbol";
 
 export function LoginForm({ csrf }: { csrf: string }) {
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function handleSubmit(formData: FormData) {
-    setError(null);
-    startTransition(async () => {
-      const result = await loginAction(formData);
-      if (!result.ok) setError(result.error);
-    });
-  }
+  const [state, formAction, pending] = useFormState(loginAction as unknown as (prev: { error: string | null }, formData: FormData) => Promise<{ error: string | null }>, { error: null as string | null });
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-margin bg-surface">
@@ -28,7 +20,7 @@ export function LoginForm({ csrf }: { csrf: string }) {
           <p className="font-body-md text-body-md text-on-surface-variant">Acceso privado</p>
         </div>
 
-        <form action={handleSubmit} className="flex flex-col gap-space-md">
+        <form action={formAction} className="flex flex-col gap-space-md">
           <input type="hidden" name="csrf" value={csrf} />
           <label className="flex flex-col gap-1">
             <span className="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
@@ -56,9 +48,10 @@ export function LoginForm({ csrf }: { csrf: string }) {
             />
           </label>
 
-          {error && (
-            <div className="px-3 py-2 rounded-lg bg-error-container/40 text-error font-body-md text-body-md">
-              {error}
+          {state.error && (
+            <div className="px-3 py-2 rounded-lg bg-error-container/40 text-error font-body-md text-body-md flex items-center gap-2">
+              <MaterialSymbol name="error" className="text-[18px]" />
+              {state.error}
             </div>
           )}
 

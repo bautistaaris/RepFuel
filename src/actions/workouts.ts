@@ -1,10 +1,9 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getSessionUserId, verifyCsrf } from "@/lib/session";
+import { getSessionUserId } from "@/lib/session";
 import {
   startWorkout,
   toggleSet,
@@ -23,7 +22,6 @@ const RoutineIdSchema = z.object({ routineId: z.string().min(1) });
 export async function startWorkoutAction(routineId: string, _csrf: string) {
   const userId = await getSessionUserId();
   if (!userId) redirect("/login");
-  if (!(await verifyCsrf((await headers()).get("x-csrf-token")))) throw new Error("CSRF");
   const parsed = RoutineIdSchema.safeParse({ routineId });
   if (!parsed.success) throw new Error("Datos inválidos");
   await startWorkout(userId, parsed.data.routineId);
@@ -37,8 +35,6 @@ const ToggleSchema = z.object({ setId: z.string().min(1), completed: z.boolean()
 async function requireUser() {
   const userId = await getSessionUserId();
   if (!userId) redirect("/login");
-  const ok = await verifyCsrf((await headers()).get("x-csrf-token"));
-  if (!ok) throw new Error("CSRF");
   return userId;
 }
 

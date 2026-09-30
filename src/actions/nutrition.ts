@@ -1,10 +1,9 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getSessionUserId, verifyCsrf } from "@/lib/session";
+import { getSessionUserId } from "@/lib/session";
 import {
   addFoodEntry,
   deleteFoodEntry,
@@ -22,7 +21,6 @@ import type { MealType } from "@/lib/types/nutrition";
 async function requireUser() {
   const userId = await getSessionUserId();
   if (!userId) redirect("/login");
-  if (!(await verifyCsrf((await headers()).get("x-csrf-token")))) throw new Error("CSRF");
   return userId;
 }
 

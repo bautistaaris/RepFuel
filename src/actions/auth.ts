@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth";
-import { setSession, destroySession, verifyCsrf } from "@/lib/session";
+import { setSession, destroySession } from "@/lib/session";
 import { checkLoginRateLimit, resetLoginRateLimit } from "@/lib/rate-limit";
 
 const LoginSchema = z.object({
@@ -14,42 +14,46 @@ const LoginSchema = z.object({
   csrf: z.string().min(1),
 });
 
-export type LoginResult = { ok: false; error: string } | { ok: true };
+export type LoginState = { error: string | null };
 
-export async function loginAction(formData: FormData): Promise<LoginResult> {
+export async function loginAction(
+  _prev: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
   const h = await headers();
-  const csrfHeader = h.get("x-csrf-token");
-  const csrfValid = await verifyCsrf(csrfHeader);
-  if (!csrfValid) {
-    return { ok: false, error: "Sesión inválida. Recargá la página." };
-  }
 
   const parsed = LoginSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
-    csrf: formData.get("csrf"),
+    csrf: formData.get("csrf") ?? "",
   });
   if (!parsed.success) {
-    return { ok: false, error: "Email o contraseña inválidos." };
+    return { error: "Email o contraseña inválidos." };
+  }
+
+  const csrfCookie = h.get("cookie") ?? "";
+  const csrfMatch = csrfCookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  const csrfFromCookie = csrfMatch ? decodeURIComponent(csrfMatch[1]) : null;
+  if (!csrfFromCookie || csrfFromCookie !== parsed.data.csrf) {
+    return { error: "Sesión inválida. Recargá la página." };
   }
 
   const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
   const limit = checkLoginRateLimit(`${parsed.data.email}:${ip}`);
   if (!limit.ok) {
     return {
-      ok: false,
       error: `Demasiados intentos. Esperá ${Math.ceil(limit.retryAfterSec / 60)} min.`,
     };
   }
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (!user) {
-    return { ok: false, error: "Credenciales incorrectas." };
+    return { error: "Credenciales incorrectas." };
   }
 
   const ok = await verifyPassword(parsed.data.password, user.passwordHash);
   if (!ok) {
-    return { ok: false, error: "Credenciales incorrectas." };
+    return { error: "Credenciales incorrectas." };
   }
 
   resetLoginRateLimit(`${parsed.data.email}:${ip}`);
