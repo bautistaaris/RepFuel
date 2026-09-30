@@ -51,13 +51,13 @@ export function decodeSessionToken(token: string): SessionPayload | null {
   }
 }
 
-export async function setSession(userId: string): Promise<void> {
+export async function setSession(userId: string, secure: boolean = process.env.NODE_ENV === "production"): Promise<void> {
   const token = createSessionToken(userId);
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure,
     path: "/",
     maxAge: SESSION_MAX_AGE,
   });

@@ -10,7 +10,14 @@ import { MaterialSymbol } from "@/components/primitives/MaterialSymbol";
 import { formatGrams, formatRelative } from "@/lib/utils/format";
 import { formatDateLong } from "@/lib/utils/dates";
 import { startWorkoutAction } from "@/actions/workouts";
-import { getSessionCsrf } from "@/lib/csrf-page";
+import { readCsrfCookie } from "@/lib/session";
+import crypto from "crypto";
+
+async function getSessionCsrf(): Promise<string> {
+  const existing = await readCsrfCookie();
+  if (existing) return existing;
+  return crypto.randomBytes(24).toString("base64url");
+}
 
 export const dynamic = "force-dynamic";
 

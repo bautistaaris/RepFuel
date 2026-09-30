@@ -17,7 +17,8 @@ const LoginSchema = z.object({
 export type LoginResult = { ok: false; error: string } | { ok: true };
 
 export async function loginAction(formData: FormData): Promise<LoginResult> {
-  const csrfHeader = (await headers()).get("x-csrf-token");
+  const h = await headers();
+  const csrfHeader = h.get("x-csrf-token");
   const csrfValid = await verifyCsrf(csrfHeader);
   if (!csrfValid) {
     return { ok: false, error: "Sesión inválida. Recargá la página." };
@@ -32,7 +33,7 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
     return { ok: false, error: "Email o contraseña inválidos." };
   }
 
-  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
   const limit = checkLoginRateLimit(`${parsed.data.email}:${ip}`);
   if (!limit.ok) {
     return {
@@ -52,7 +53,8 @@ export async function loginAction(formData: FormData): Promise<LoginResult> {
   }
 
   resetLoginRateLimit(`${parsed.data.email}:${ip}`);
-  await setSession(user.id);
+  const isHttps = (h.get("x-forwarded-proto") ?? "").toLowerCase() === "https";
+  await setSession(user.id, isHttps);
   redirect("/inicio");
 }
 
