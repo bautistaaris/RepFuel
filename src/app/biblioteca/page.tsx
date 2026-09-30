@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionUserId } from "@/lib/session";
-import { listExercises, listMuscleGroups } from "@/lib/services/exercises";
+import { listExercisesForUser, listMuscleGroupsForUser } from "@/lib/services/exercises";
 import { AppShell } from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { BibliotecaContent } from "@/components/exercises/BibliotecaContent";
@@ -23,15 +23,15 @@ export default async function BibliotecaPage({
     customOnly: sp.custom === "1",
   };
   const [exercises, groups] = await Promise.all([
-    listExercises(filter),
-    listMuscleGroups(),
+    listExercisesForUser(userId, filter),
+    listMuscleGroupsForUser(userId),
   ]);
   return (
     <AppShell bottomNav={false}>
       <AppHeader title="Biblioteca" backHref="/inicio" />
       <BibliotecaContent
         csrf={csrf}
-        exercises={exercises.map((e) => ({
+        exercises={exercises.map((e: { id: string; name: string; muscleGroup: string; equipment: string | null; secondaryMuscles: string | null; isCustom: boolean }) => ({
           id: e.id,
           name: e.name,
           muscleGroup: e.muscleGroup,

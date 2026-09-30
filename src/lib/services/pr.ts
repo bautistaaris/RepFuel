@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 
 export type PRDetectionInput = {
+  userId: string;
   exerciseId: string;
   weight: number | null;
   reps: number | null;
@@ -14,14 +15,18 @@ export type PRResult = {
   previousValue?: number;
 };
 
+/**
+ * PR detection is scoped to the requesting user's history ONLY.
+ * Never compares against other users' sets.
+ */
 export async function detectPR(input: PRDetectionInput): Promise<PRResult> {
-  const { exerciseId, weight, reps, completedAt } = input;
+  const { userId, exerciseId, weight, reps, completedAt } = input;
   if (weight === null || reps === null) return { isPR: false };
   if (weight <= 0 || reps <= 0) return { isPR: false };
 
   const priorCompleted = await prisma.workoutSet.findMany({
     where: {
-      workoutExercise: { exerciseId },
+      workoutExercise: { exerciseId, workout: { userId } },
       completed: true,
       weight: { not: null },
       reps: { not: null },
@@ -65,12 +70,13 @@ export type ExerciseHistoryPoint = {
 };
 
 export async function getExerciseHistory(
+  userId: string,
   exerciseId: string,
   limit = 30,
 ): Promise<ExerciseHistoryPoint[]> {
   const sets = await prisma.workoutSet.findMany({
     where: {
-      workoutExercise: { exerciseId },
+      workoutExercise: { exerciseId, workout: { userId } },
       completed: true,
     },
     include: {
@@ -103,15 +109,19 @@ export async function getExerciseHistory(
 }
 
 export async function getLastSessionData(
+  userId: string,
   exerciseId: string,
   currentWorkoutId: string,
 ): Promise<Array<{ weight: number | null; reps: number | null }>> {
-  const current = await prisma.workout.findUnique({ where: { id: currentWorkoutId } });
+  const current = await prisma.workout.findFirst({
+    where: { id: currentWorkoutId, userId },
+  });
   if (!current) return [];
 
   const prior = await prisma.workout.findFirst({
     where: {
       exercises: { some: { exerciseId } },
+      userId,
       status: "COMPLETED",
       startedAt: { lt: current.startedAt },
     },

@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: repfuel-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: repfuel
+      POSTGRES_PASSWORD: repfuel
+      POSTGRES_DB: repfuel
+    volumes:
+      - rep-fuel-pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U repfuel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: repfuel
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://repfuel:repfuel@postgres:5432/repfuel
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      ALLOW_PUBLIC_REGISTRATION: ${ALLOW_PUBLIC_REGISTRATION:-true}
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-false}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+      EMAIL_FROM: ${EMAIL_FROM:-RepFuel <noreply@repfuel.app>}
+      EMAIL_API_KEY: ${EMAIL_API_KEY:-}
+      NUTRITION_AI_PROVIDER: ${NUTRITION_AI_PROVIDER:-none}
+      NUTRITION_AI_API_KEY: ${NUTRITION_AI_API_KEY:-}
+      NUTRITION_AI_MODEL: ${NUTRITION_AI_MODEL:-gpt-4o-mini}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+    volumes:
+      - rep-fuel-data:/app/data
+      - rep-fuel-backups:/app/backups
+
+volumes:
+  rep-fuel-pgdata:
+  rep-fuel-data:
+  rep-fuel-backups:

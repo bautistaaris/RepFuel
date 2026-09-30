@@ -16,7 +16,7 @@ import {
 } from "@/lib/services/routines";
 import {
   createCustomExercise,
-  updateExercise,
+  updateCustomExercise,
   deleteCustomExercise,
 } from "@/lib/services/exercises";
 
@@ -168,7 +168,7 @@ export async function updateCustomExerciseAction(input: {
 }) {
   const userId = await requireUser();
   const parsed = UpdateExerciseSchema.parse(input);
-  await updateExercise(userId, parsed.id, parsed);
+  await updateCustomExercise(userId, parsed.id, parsed);
   revalidatePath("/biblioteca");
   return { ok: true as const };
 }

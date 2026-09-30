@@ -1,6 +1,5 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { startOfDay, addDays, rangeStart, type Range } from "@/lib/utils/dates";
 
 export async function listBodyWeights(userId: string, limit = 90) {
   return prisma.bodyWeightEntry.findMany({
@@ -37,8 +36,8 @@ export async function addBodyWeight(
 }
 
 export async function deleteBodyWeight(userId: string, id: string): Promise<void> {
-  const e = await prisma.bodyWeightEntry.findUnique({ where: { id } });
-  if (!e || e.userId !== userId) throw new Error("No encontrado");
+  const e = await prisma.bodyWeightEntry.findFirst({ where: { id, userId } });
+  if (!e) throw new Error("No encontrado");
   await prisma.bodyWeightEntry.delete({ where: { id } });
 }
 
@@ -92,3 +91,5 @@ export async function weightSeries(userId: string, range: Range) {
     orderBy: { date: "asc" },
   });
 }
+
+import { startOfDay, addDays, rangeStart, type Range } from "@/lib/utils/dates";

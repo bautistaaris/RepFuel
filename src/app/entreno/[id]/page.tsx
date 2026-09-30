@@ -10,7 +10,7 @@ import { MaterialSymbol } from "@/components/primitives/MaterialSymbol";
 import { RoutineEditor } from "@/components/routines/RoutineEditor";
 import { RoutineActions } from "@/components/routines/RoutineActions";
 import { getSessionCsrf } from "@/lib/csrf-page";
-import { listExercises } from "@/lib/services/exercises";
+import { listExercisesForUser } from "@/lib/services/exercises";
 import { startWorkoutAction } from "@/actions/workouts";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export default async function RoutineDetailPage({
   const [routine, active, exercises, csrf] = await Promise.all([
     getRoutineDetail(userId, id),
     getActiveWorkout(userId),
-    listExercises(),
+    listExercisesForUser(userId),
     getSessionCsrf(),
   ]);
   if (!routine) notFound();
@@ -72,7 +72,7 @@ export default async function RoutineDetailPage({
         ) : (
           <RoutineEditor
             routineId={routine.id}
-            exercises={routine.exercises.map((e) => ({
+            exercises={routine.exercises.map((e: { id: string; exerciseId: string; exercise: { name: string; muscleGroup: string; equipment: string | null }; position: number; targetSets: number; restSeconds: number; notes: string | null }) => ({
               id: e.id,
               exerciseId: e.exerciseId,
               name: e.exercise.name,
@@ -83,7 +83,7 @@ export default async function RoutineDetailPage({
               restSeconds: e.restSeconds,
               notes: e.notes,
             }))}
-            availableExercises={exercises.map((e) => ({
+            availableExercises={exercises.map((e: { id: string; name: string; muscleGroup: string; isCustom: boolean }) => ({
               id: e.id,
               name: e.name,
               muscleGroup: e.muscleGroup,

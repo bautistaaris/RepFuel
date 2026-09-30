@@ -1,26 +1,26 @@
 import { redirect } from "next/navigation";
-import { getSessionUserId } from "@/lib/session";
-import { prisma } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth-user";
 import { AppShell } from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/layout/AppHeader";
-import { SettingsContent } from "@/components/settings/SettingsContent";
-import { getSessionCsrf } from "@/lib/csrf-page";
+import { AccountSettings } from "@/components/settings/AccountSettings";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const userId = await getSessionUserId();
-  if (!userId) redirect("/login");
-  const csrf = await getSessionCsrf();
-  const [user, settings] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } }),
-    prisma.appSetting.findUnique({ where: { userId } }),
-  ]);
+  const user = await getCurrentUser();
   if (!user) redirect("/login");
+
   return (
     <AppShell bottomNav={false}>
       <AppHeader title="Ajustes" backHref="/inicio" />
-      <SettingsContent csrf={csrf} user={user} weeklyGoal={settings?.weeklyGoal ?? 4} />
+      <AccountSettings
+        user={{
+          email: user.email,
+          name: user.name ?? "Usuario",
+          timezone: user.settings?.timezone ?? "UTC",
+          units: user.settings?.units ?? "metric",
+        }}
+      />
     </AppShell>
   );
 }

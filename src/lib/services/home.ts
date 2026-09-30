@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { startOfDay, endOfDay, addDays, rangeStart, type Range } from "@/lib/utils/dates";
-import { workoutVolume, workoutCompletedSets } from "@/lib/utils/volume";
+import { startOfDay, endOfDay, rangeStart, type Range } from "@/lib/utils/dates";
+import { workoutVolume } from "@/lib/utils/volume";
 
 export type HomeData = {
   userName: string;
@@ -322,7 +322,7 @@ export async function getProgressSummary(userId: string, range: Range): Promise<
   });
 
   const totalVolume = workouts.reduce((acc, w) => acc + workoutVolume(w), 0);
-  const totalSets = workouts.reduce((acc, w) => acc + workoutCompletedSets(w), 0);
+  const totalSets = workouts.reduce((acc, w) => acc + w.exercises.reduce((ea, e) => ea + e.sets.filter((s) => s.completed).length, 0), 0);
   const prCount = workouts.reduce(
     (acc, w) =>
       acc +
@@ -352,7 +352,7 @@ export async function getProgressSummary(userId: string, range: Range): Promise<
 
   const entries = await prisma.foodEntry.findMany({
     where: { userId, date: { gte: start } },
-    select: { date: true, protein: true, calories: true },
+    select: { date: true, calories: true, protein: true },
   });
   const target = await prisma.dailyNutritionTarget.findUnique({ where: { userId } });
   const caloriesConsumed = entries.reduce((a, e) => a + e.calories, 0);
@@ -392,3 +392,5 @@ export async function getProgressSummary(userId: string, range: Range): Promise<
     },
   };
 }
+
+import { addDays } from "@/lib/utils/dates";

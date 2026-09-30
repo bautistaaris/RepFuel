@@ -1,24 +1,27 @@
 "use client";
 
+import Link from "next/link";
 import { useFormState } from "react-dom";
 import { loginAction } from "@/actions/auth";
 import { MaterialSymbol } from "@/components/primitives/MaterialSymbol";
 
-export function LoginForm({ csrf }: { csrf: string }) {
+export function LoginForm({ csrf, hideTitle = false }: { csrf: string; hideTitle?: boolean }) {
   const [state, formAction, pending] = useFormState(loginAction as unknown as (prev: { error: string | null }, formData: FormData) => Promise<{ error: string | null }>, { error: null as string | null });
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-margin bg-surface">
       <div className="w-full max-w-sm flex flex-col gap-space-lg">
-        <div className="flex flex-col items-center gap-space-sm">
-          <div className="w-20 h-20 rounded-xl bg-surface-container-low flex items-center justify-center">
-            <svg viewBox="0 0 100 100" className="w-12 h-12 text-primary-fixed fill-current">
-              <path d="M50 8 L78 60 L62 60 L62 92 L38 92 L38 60 L22 60 Z" />
-            </svg>
+        {!hideTitle && (
+          <div className="flex flex-col items-center gap-space-sm">
+            <div className="w-20 h-20 rounded-xl bg-surface-container-low flex items-center justify-center">
+              <svg viewBox="0 0 100 100" className="w-12 h-12 text-primary-fixed fill-current">
+                <path d="M50 8 L78 60 L62 60 L62 92 L38 92 L38 60 L22 60 Z" />
+              </svg>
+            </div>
+            <h1 className="font-display-hero text-display-hero text-on-surface tracking-tight">RepFuel</h1>
+            <p className="font-body-md text-body-md text-on-surface-variant">Acceso privado</p>
           </div>
-          <h1 className="font-display-hero text-display-hero text-on-surface tracking-tight">RepFuel</h1>
-          <p className="font-body-md text-body-md text-on-surface-variant">Acceso privado</p>
-        </div>
+        )}
 
         <form action={formAction} className="flex flex-col gap-space-md">
           <input type="hidden" name="csrf" value={csrf} />
@@ -63,6 +66,16 @@ export function LoginForm({ csrf }: { csrf: string }) {
             {pending ? "Ingresando..." : "Ingresar"}
           </button>
         </form>
+
+        {!hideTitle && (
+          <div className="flex flex-col gap-space-sm text-center font-body-md text-body-md text-on-surface-variant">
+            <Link href="/forgot-password" className="text-primary-fixed">Olvidé mi contraseña</Link>
+            <span>
+              ¿No tenés cuenta?{" "}
+              <Link href="/register" className="text-primary-fixed font-bold">Crear cuenta</Link>
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

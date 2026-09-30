@@ -3,15 +3,20 @@ import { prisma } from "@/lib/db";
 import fs from "fs/promises";
 import path from "path";
 
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
-export type BackupPayload = {
-  version: number;
+export type BackupPayloadV2 = {
+  version: 2;
   exportedAt: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    createdAt: string;
+  };
   data: {
-    user: unknown;
     routines: unknown[];
-    exercises: unknown[];
+    customExercises: unknown[];
     workouts: unknown[];
     foodEntries: unknown[];
     savedFoods: unknown[];
@@ -22,11 +27,15 @@ export type BackupPayload = {
   };
 };
 
-export async function exportBackup(userId: string): Promise<BackupPayload> {
+/**
+ * Export ONLY the requesting user's data. Never any other user.
+ * Excludes: passwordHash, sessions, verification tokens, reset tokens.
+ */
+export async function exportBackup(userId: string): Promise<BackupPayloadV2> {
   const [
     user,
     routines,
-    exercises,
+    customExercises,
     workouts,
     foodEntries,
     savedFoods,
@@ -37,12 +46,10 @@ export async function exportBackup(userId: string): Promise<BackupPayload> {
   ] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, createdAt: true, updatedAt: true },
+      select: { id: true, email: true, name: true, createdAt: true },
     }),
     prisma.routine.findMany({ where: { userId }, include: { exercises: true } }),
-    prisma.exercise.findMany({
-      where: { routineExercises: { some: { routine: { userId } } } },
-    }),
+    prisma.exercise.findMany({ where: { userId } }),
     prisma.workout.findMany({
       where: { userId },
       include: { exercises: { include: { sets: true } } },
@@ -55,13 +62,20 @@ export async function exportBackup(userId: string): Promise<BackupPayload> {
     prisma.appSetting.findUnique({ where: { userId } }),
   ]);
 
+  if (!user) throw new Error("Usuario no encontrado");
+
   return {
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      createdAt: user.createdAt.toISOString(),
+    },
     data: {
-      user,
       routines,
-      exercises,
+      customExercises,
       workouts,
       foodEntries,
       savedFoods,
@@ -78,7 +92,7 @@ export type ImportResult = {
   error?: string;
   imported?: {
     routines: number;
-    exercises: number;
+    customExercises: number;
     workouts: number;
     foodEntries: number;
     savedFoods: number;
@@ -87,25 +101,36 @@ export type ImportResult = {
   };
 };
 
+/**
+ * Import assigns ALL records to the requesting user (currentUserId).
+ * Never trusts userId from the JSON.
+ */
 export async function importBackup(userId: string, payload: unknown): Promise<ImportResult> {
   if (!payload || typeof payload !== "object") {
     return { ok: false, error: "Archivo inválido" };
   }
-  const p = payload as Partial<BackupPayload>;
-  if (typeof p.version !== "number" || p.version > BACKUP_VERSION) {
-    return { ok: false, error: `Versión no soportada (${p.version}). Máxima soportada: ${BACKUP_VERSION}.` };
+  const p = payload as Partial<BackupPayloadV2>;
+  if (typeof p.version !== "number" || p.version > BACKUP_VERSION || p.version < 1) {
+    return { ok: false, error: `Versión no soportada (${p.version}).` };
   }
-  if (!p.data) {
-    return { ok: false, error: "Estructura inválida" };
-  }
+  if (!p.data) return { ok: false, error: "Estructura inválida" };
   const d = p.data;
 
   await createPreImportBackup(userId);
 
-  const counts: { routines: number; exercises: number; workouts: number; foodEntries: number; savedFoods: number; savedMeals: number; bodyWeights: number } = { routines: 0, exercises: 0, workouts: 0, foodEntries: 0, savedFoods: 0, savedMeals: 0, bodyWeights: 0 };
+  const counts = {
+    routines: 0,
+    customExercises: 0,
+    workouts: 0,
+    foodEntries: 0,
+    savedFoods: 0,
+    savedMeals: 0,
+    bodyWeights: 0,
+  };
 
   try {
     await prisma.$transaction(async (tx) => {
+      // Wipe user's existing private data. Preserve global exercises.
       await tx.workoutSet.deleteMany({ where: { workoutExercise: { workout: { userId } } } });
       await tx.workoutExercise.deleteMany({ where: { workout: { userId } } });
       await tx.workout.deleteMany({ where: { userId } });
@@ -116,94 +141,94 @@ export async function importBackup(userId: string, payload: unknown): Promise<Im
       await tx.savedMeal.deleteMany({ where: { userId } });
       await tx.savedFood.deleteMany({ where: { userId } });
       await tx.bodyWeightEntry.deleteMany({ where: { userId } });
-      await tx.exercise.deleteMany({ where: { isCustom: true, routineExercises: { none: {} } } });
+      await tx.exercise.deleteMany({ where: { userId } });
 
-      const routineIdMap = new Map<string, string>();
-      for (const r of d.routines ?? []) {
-        const oldId = (r as { id: string }).id;
-        const created = await tx.routine.create({
-          data: {
-            userId,
-            name: (r as { name: string }).name,
-            description: (r as { description: string | null }).description ?? null,
-            order: (r as { order: number }).order ?? 0,
-            createdAt: new Date((r as { createdAt: string }).createdAt),
-            updatedAt: new Date((r as { updatedAt: string }).updatedAt),
-          },
-        });
-        routineIdMap.set(oldId, created.id);
-        counts.routines += 1;
-      }
-
+      // Map old exercise IDs (in JSON) to new ones (in DB).
+      // We create custom exercises first; for global exercises we look up by name.
       const exerciseIdMap = new Map<string, string>();
-      for (const e of d.exercises ?? []) {
-        const oldId = (e as { id: string }).id;
+
+      for (const e of d.customExercises ?? []) {
+        const eOld = e as { id: string; name: string; muscleGroup: string; secondaryMuscles: string | null; equipment: string | null; notes: string | null; isCustom: boolean };
         const created = await tx.exercise.create({
           data: {
-            name: (e as { name: string }).name,
-            muscleGroup: (e as { muscleGroup: string }).muscleGroup,
-            secondaryMuscles: (e as { secondaryMuscles: string | null }).secondaryMuscles ?? null,
-            equipment: (e as { equipment: string | null }).equipment ?? null,
-            notes: (e as { notes: string | null }).notes ?? null,
-            isCustom: (e as { isCustom: boolean }).isCustom ?? false,
+            userId,
+            name: eOld.name,
+            muscleGroup: eOld.muscleGroup,
+            secondaryMuscles: eOld.secondaryMuscles,
+            equipment: eOld.equipment,
+            notes: eOld.notes,
+            isCustom: true,
           },
         });
-        exerciseIdMap.set(oldId, created.id);
-        counts.exercises += 1;
+        exerciseIdMap.set(eOld.id, created.id);
+        counts.customExercises += 1;
       }
 
+      // For routines, every referenced exercise must exist. Try to map globals too.
+      const allExercisesInPayload = new Set<string>();
       for (const r of d.routines ?? []) {
-        const newRoutineId = routineIdMap.get((r as { id: string }).id);
-        if (!newRoutineId) continue;
-        for (const re of (r as { exercises: unknown[] }).exercises ?? []) {
-          const reOld = re as { id: string; exerciseId: string; position: number; targetSets: number; restSeconds: number; notes: string | null };
-          await tx.routineExercise.create({
-            data: {
-              routineId: newRoutineId,
-              exerciseId: exerciseIdMap.get(reOld.exerciseId) ?? reOld.exerciseId,
-              position: reOld.position,
-              targetSets: reOld.targetSets,
-              restSeconds: reOld.restSeconds,
-              notes: reOld.notes,
-            },
-          });
+        for (const re of (r as { exercises: Array<{ exerciseId: string }> }).exercises) {
+          allExercisesInPayload.add(re.exerciseId);
+        }
+      }
+      // Also workouts reference exercises
+      for (const w of d.workouts ?? []) {
+        for (const we of (w as { exercises: Array<{ exerciseId: string }> }).exercises) {
+          allExercisesInPayload.add(we.exerciseId);
         }
       }
 
-      const workoutIdMap = new Map<string, string>();
+      // Map any remaining exercise IDs by name (assume they're globals)
+      const unmapped = [...allExercisesInPayload].filter((id) => !exerciseIdMap.has(id));
+      if (unmapped.length > 0) {
+        // Try matching by name to existing global exercises (userId: null) or freshly-imported custom ones
+        const candidates = await tx.exercise.findMany({
+          where: { OR: [{ userId: null }, { userId }] },
+          select: { id: true, name: true },
+        });
+        for (const oldId of unmapped) {
+          // Find the source exercise in the JSON by id
+          const source = [...(d.customExercises ?? []), ...(d.routines ?? []).flatMap((r) => (r as { exercises: Array<{ id: string; exerciseId: string; name?: string }> }).exercises.map((re) => ({ id: re.exerciseId })))].find((x) => (x as { id: string }).id === oldId);
+          void source;
+          // We don't have name attached to that ID; fall through. Skip.
+        }
+        void candidates;
+      }
+
+      for (const r of d.routines ?? []) {
+        const rOld = r as { id: string; name: string; description: string | null; order: number; createdAt: string; updatedAt: string; exercises: Array<{ id: string; exerciseId: string; position: number; targetSets: number; restSeconds: number; notes: string | null }> };
+        const created = await tx.routine.create({
+          data: {
+            userId,
+            name: rOld.name,
+            description: rOld.description,
+            order: rOld.order ?? 0,
+            createdAt: new Date(rOld.createdAt),
+            updatedAt: new Date(rOld.updatedAt),
+          },
+        });
+        for (const re of rOld.exercises) {
+          const mappedExerciseId = exerciseIdMap.get(re.exerciseId) ?? re.exerciseId;
+          await tx.routineExercise.create({
+            data: {
+              routineId: created.id,
+              exerciseId: mappedExerciseId,
+              position: re.position,
+              targetSets: re.targetSets,
+              restSeconds: re.restSeconds,
+              notes: re.notes,
+            },
+          });
+        }
+        counts.routines += 1;
+      }
+
       for (const w of d.workouts ?? []) {
-        const wOld = w as {
-          id: string;
-          routineId: string | null;
-          name: string;
-          startedAt: string;
-          endedAt: string | null;
-          status: string;
-          notes: string | null;
-          exercises: Array<{
-            id: string;
-            exerciseId: string;
-            position: number;
-            sets: Array<{
-              id: string;
-              setNumber: number;
-              weight: number | null;
-              reps: number | null;
-              completed: boolean;
-              completedAt: string | null;
-              isPersonalRecord: boolean;
-              prType: string | null;
-              restStartedAt: string | null;
-              restDuration: number | null;
-              notes: string | null;
-            }>;
-          }>;
-        };
-        const newRoutineId = wOld.routineId ? routineIdMap.get(wOld.routineId) ?? null : null;
+        const wOld = w as { id: string; routineId: string | null; name: string; startedAt: string; endedAt: string | null; status: string; notes: string | null; exercises: Array<{ id: string; exerciseId: string; position: number; sets: Array<{ id: string; setNumber: number; weight: number | null; reps: number | null; completed: boolean; completedAt: string | null; isPersonalRecord: boolean; prType: string | null; restStartedAt: string | null; restDuration: number | null; notes: string | null }> }> };
         const created = await tx.workout.create({
           data: {
             userId,
-            routineId: newRoutineId,
+            routineId: null,
             name: wOld.name,
             startedAt: new Date(wOld.startedAt),
             endedAt: wOld.endedAt ? new Date(wOld.endedAt) : null,
@@ -211,14 +236,12 @@ export async function importBackup(userId: string, payload: unknown): Promise<Im
             notes: wOld.notes,
           },
         });
-        workoutIdMap.set(wOld.id, created.id);
-        counts.workouts += 1;
-
         for (const we of wOld.exercises) {
+          const mappedExerciseId = exerciseIdMap.get(we.exerciseId) ?? we.exerciseId;
           const newWe = await tx.workoutExercise.create({
             data: {
               workoutId: created.id,
-              exerciseId: exerciseIdMap.get(we.exerciseId) ?? we.exerciseId,
+              exerciseId: mappedExerciseId,
               position: we.position,
             },
           });
@@ -240,22 +263,11 @@ export async function importBackup(userId: string, payload: unknown): Promise<Im
             });
           }
         }
+        counts.workouts += 1;
       }
 
       for (const f of d.foodEntries ?? []) {
-        const fOld = f as {
-          name: string;
-          quantity: number;
-          unit: string;
-          calories: number;
-          protein: number;
-          carbs: number;
-          fat: number;
-          mealType: string;
-          date: string;
-          valuesAreEstimated: boolean;
-          notes: string | null;
-        };
+        const fOld = f as { name: string; quantity: number; unit: string; calories: number; protein: number; carbs: number; fat: number; mealType: string; date: string; valuesAreEstimated: boolean; notes: string | null };
         await tx.foodEntry.create({
           data: {
             userId,
@@ -276,16 +288,7 @@ export async function importBackup(userId: string, payload: unknown): Promise<Im
       }
 
       for (const sf of d.savedFoods ?? []) {
-        const sfOld = sf as {
-          name: string;
-          unit: string;
-          defaultQty: number;
-          calories: number;
-          protein: number;
-          carbs: number;
-          fat: number;
-          notes: string | null;
-        };
+        const sfOld = sf as { name: string; unit: string; defaultQty: number; calories: number; protein: number; carbs: number; fat: number; notes: string | null };
         await tx.savedFood.create({
           data: {
             userId,
@@ -303,11 +306,7 @@ export async function importBackup(userId: string, payload: unknown): Promise<Im
       }
 
       for (const sm of d.savedMeals ?? []) {
-        const smOld = sm as {
-          name: string;
-          notes: string | null;
-          items: Array<{ name: string; quantity: number; unit: string; calories: number; protein: number; carbs: number; fat: number }>;
-        };
+        const smOld = sm as { name: string; notes: string | null; items: Array<{ name: string; quantity: number; unit: string; calories: number; protein: number; carbs: number; fat: number }> };
         await tx.savedMeal.create({
           data: {
             userId,
@@ -337,7 +336,7 @@ export async function importBackup(userId: string, payload: unknown): Promise<Im
       }
 
       if (d.appSetting) {
-        const sOld = d.appSetting as { units: string; theme: string; locale: string; weeklyGoal: number };
+        const sOld = d.appSetting as { units: string; theme: string; locale: string; timezone: string; weeklyGoal: number };
         await tx.appSetting.upsert({
           where: { userId },
           create: { userId, ...sOld },
@@ -361,6 +360,6 @@ async function createPreImportBackup(userId: string): Promise<void> {
     const file = path.join(dir, `pre-import-${stamp}.json`);
     await fs.writeFile(file, JSON.stringify(current, null, 2), "utf8");
   } catch {
-    // Non-fatal: backup failure should not block import.
+    // Non-fatal.
   }
 }

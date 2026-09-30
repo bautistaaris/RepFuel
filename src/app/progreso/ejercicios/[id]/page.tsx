@@ -18,12 +18,17 @@ export default async function ExerciseDetailPage({
   const userId = await getSessionUserId();
   if (!userId) redirect("/login");
 
-  const exercise = await prisma.exercise.findUnique({ where: { id } });
+  const exercise = await prisma.exercise.findFirst({
+    where: { id, OR: [{ userId: null }, { userId }] },
+  });
   if (!exercise) notFound();
 
-  const history = await getExerciseHistory(id, 60);
+  const history = await getExerciseHistory(userId, id, 60);
   const prSets = await prisma.workoutSet.findMany({
-    where: { workoutExercise: { exerciseId: id }, isPersonalRecord: true },
+    where: {
+      workoutExercise: { exerciseId: id, workout: { userId } },
+      isPersonalRecord: true,
+    },
     include: { workoutExercise: { include: { workout: true } } },
     orderBy: { completedAt: "desc" },
     take: 10,

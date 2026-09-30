@@ -1,7 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { startOfDay, endOfDay, rangeStart, type Range } from "@/lib/utils/dates";
-import type { NutritionParser, NutritionEstimate } from "@/lib/parsers/types";
 import { getParser } from "@/lib/parsers";
 import type { MealType } from "@/lib/types/nutrition";
 
@@ -43,8 +42,8 @@ export async function addFoodEntry(userId: string, input: FoodEntryInput): Promi
 }
 
 export async function deleteFoodEntry(userId: string, entryId: string): Promise<void> {
-  const e = await prisma.foodEntry.findUnique({ where: { id: entryId } });
-  if (!e || e.userId !== userId) throw new Error("No encontrado");
+  const e = await prisma.foodEntry.findFirst({ where: { id: entryId, userId } });
+  if (!e) throw new Error("No encontrado");
   await prisma.foodEntry.delete({ where: { id: entryId } });
 }
 
@@ -95,9 +94,8 @@ export async function updateTarget(
   }
 }
 
-export async function parseNutritionFor(userId: string, description: string): Promise<NutritionEstimate> {
-  const parser: NutritionParser = getParser();
-  return parser.parse(description);
+export async function parseNutritionFor(_userId: string, description: string) {
+  return getParser().parse(description);
 }
 
 // Saved foods
@@ -109,7 +107,7 @@ export async function createSavedFood(
   userId: string,
   input: { name: string; unit?: string; defaultQty?: number; calories: number; protein: number; carbs: number; fat: number; notes?: string },
 ): Promise<string> {
-  const sf = await prisma.savedFood.create({
+  return prisma.savedFood.create({
     data: {
       userId,
       name: input.name,
@@ -121,13 +119,12 @@ export async function createSavedFood(
       fat: input.fat,
       notes: input.notes,
     },
-  });
-  return sf.id;
+  }).then((r) => r.id);
 }
 
 export async function deleteSavedFood(userId: string, id: string): Promise<void> {
-  const sf = await prisma.savedFood.findUnique({ where: { id } });
-  if (!sf || sf.userId !== userId) throw new Error("No encontrado");
+  const sf = await prisma.savedFood.findFirst({ where: { id, userId } });
+  if (!sf) throw new Error("No encontrado");
   await prisma.savedFood.delete({ where: { id } });
 }
 
@@ -148,29 +145,28 @@ export async function createSavedMeal(
     items: Array<{ name: string; quantity: number; unit: string; calories: number; protein: number; carbs: number; fat: number }>;
   },
 ): Promise<string> {
-  const sm = await prisma.savedMeal.create({
+  return prisma.savedMeal.create({
     data: {
       userId,
       name: input.name,
       notes: input.notes,
       items: { create: input.items },
     },
-  });
-  return sm.id;
+  }).then((r) => r.id);
 }
 
 export async function deleteSavedMeal(userId: string, id: string): Promise<void> {
-  const sm = await prisma.savedMeal.findUnique({ where: { id } });
-  if (!sm || sm.userId !== userId) throw new Error("No encontrado");
+  const sm = await prisma.savedMeal.findFirst({ where: { id, userId } });
+  if (!sm) throw new Error("No encontrado");
   await prisma.savedMeal.delete({ where: { id } });
 }
 
 export async function logSavedMeal(userId: string, savedMealId: string, mealType: MealType, date: Date): Promise<void> {
-  const sm = await prisma.savedMeal.findUnique({
-    where: { id: savedMealId },
+  const sm = await prisma.savedMeal.findFirst({
+    where: { id: savedMealId, userId },
     include: { items: true },
   });
-  if (!sm || sm.userId !== userId) throw new Error("No encontrado");
+  if (!sm) throw new Error("No encontrado");
   for (const it of sm.items) {
     await prisma.foodEntry.create({
       data: {
@@ -191,8 +187,8 @@ export async function logSavedMeal(userId: string, savedMealId: string, mealType
 }
 
 export async function logSavedFood(userId: string, savedFoodId: string, mealType: MealType, date: Date): Promise<void> {
-  const sf = await prisma.savedFood.findUnique({ where: { id: savedFoodId } });
-  if (!sf || sf.userId !== userId) throw new Error("No encontrado");
+  const sf = await prisma.savedFood.findFirst({ where: { id: savedFoodId, userId } });
+  if (!sf) throw new Error("No encontrado");
   await prisma.foodEntry.create({
     data: {
       userId,

@@ -21,7 +21,7 @@ export default async function ActiveWorkoutPage() {
 
   const restDefaults = workout.routineId
     ? await prisma.routineExercise.findMany({
-        where: { routineId: workout.routineId },
+        where: { routineId: workout.routineId, routine: { userId } },
         select: { exerciseId: true, restSeconds: true, targetSets: true },
       })
     : [];
@@ -33,7 +33,7 @@ export default async function ActiveWorkoutPage() {
 
   const previousByExercise = new Map<string, Array<{ weight: number | null; reps: number | null }>>();
   for (const we of workout.exercises) {
-    const prior = await getLastSessionData(we.exerciseId, workout.id);
+    const prior = await getLastSessionData(userId, we.exerciseId, workout.id);
     previousByExercise.set(we.exerciseId, prior);
   }
 

@@ -1,21 +1,21 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 
-export async function listExercises(filter?: { muscleGroup?: string; search?: string; customOnly?: boolean }) {
+export async function listExercisesForUser(userId: string, filter?: { muscleGroup?: string; search?: string; customOnly?: boolean }) {
   return prisma.exercise.findMany({
     where: {
+      OR: [{ userId: null }, { userId }],
       ...(filter?.muscleGroup ? { muscleGroup: filter.muscleGroup } : {}),
-      ...(filter?.customOnly ? { isCustom: true } : {}),
-      ...(filter?.search
-        ? { name: { contains: filter.search } }
-        : {}),
+      ...(filter?.customOnly ? { userId } : {}),
+      ...(filter?.search ? { name: { contains: filter.search } } : {}),
     },
     orderBy: [{ muscleGroup: "asc" }, { name: "asc" }],
   });
 }
 
-export async function listMuscleGroups(): Promise<string[]> {
+export async function listMuscleGroupsForUser(userId: string): Promise<string[]> {
   const rows = await prisma.exercise.findMany({
+    where: { OR: [{ userId: null }, { userId }] },
     distinct: ["muscleGroup"],
     select: { muscleGroup: true },
     orderBy: { muscleGroup: "asc" },
@@ -28,11 +28,15 @@ export async function createCustomExercise(
   input: { name: string; muscleGroup: string; secondaryMuscles?: string; equipment?: string; notes?: string },
 ): Promise<string> {
   const exists = await prisma.exercise.findFirst({
-    where: { name: { equals: input.name }, isCustom: false },
+    where: {
+      OR: [{ userId: null }, { userId }],
+      name: { equals: input.name },
+    },
   });
-  if (exists) throw new Error("Ya existe un ejercicio con ese nombre en la biblioteca");
+  if (exists) throw new Error("Ya existe un ejercicio con ese nombre");
   const ex = await prisma.exercise.create({
     data: {
+      userId,
       name: input.name,
       muscleGroup: input.muscleGroup,
       secondaryMuscles: input.secondaryMuscles,
@@ -41,19 +45,16 @@ export async function createCustomExercise(
       isCustom: true,
     },
   });
-  void userId;
   return ex.id;
 }
 
-export async function updateExercise(
+export async function updateCustomExercise(
   userId: string,
   exerciseId: string,
   input: { name?: string; muscleGroup?: string; secondaryMuscles?: string; equipment?: string; notes?: string },
 ): Promise<void> {
-  const ex = await prisma.exercise.findUnique({ where: { id: exerciseId } });
-  if (!ex) throw new Error("Ejercicio no encontrado");
-  if (!ex.isCustom) throw new Error("Solo se pueden editar ejercicios personalizados");
-  void userId;
+  const ex = await prisma.exercise.findFirst({ where: { id: exerciseId, userId } });
+  if (!ex) throw new Error("Ejercicio no encontrado o no es tuyo");
   await prisma.exercise.update({
     where: { id: exerciseId },
     data: {
@@ -67,9 +68,7 @@ export async function updateExercise(
 }
 
 export async function deleteCustomExercise(userId: string, exerciseId: string): Promise<void> {
-  const ex = await prisma.exercise.findUnique({ where: { id: exerciseId } });
-  if (!ex) throw new Error("Ejercicio no encontrado");
-  if (!ex.isCustom) throw new Error("No se puede eliminar un ejercicio de la biblioteca");
-  void userId;
+  const ex = await prisma.exercise.findFirst({ where: { id: exerciseId, userId } });
+  if (!ex) throw new Error("Ejercicio no encontrado o no es tuyo");
   await prisma.exercise.delete({ where: { id: exerciseId } });
 }

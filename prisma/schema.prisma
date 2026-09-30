@@ -1,12 +1,12 @@
 // RepFuel — Prisma schema
-// Single-user, self-hosted, mobile-first PWA.
+// Multi-user, self-hostable, mobile-first PWA.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -15,33 +15,42 @@ model User {
   email            String                @unique
   passwordHash     String
   name             String?
+  emailVerifiedAt  DateTime?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   routines         Routine[]
   workouts         Workout[]
+  customExercises  Exercise[]            @relation("CustomExercises")
   savedFoods       SavedFood[]
   savedMeals       SavedMeal[]
   foodEntries      FoodEntry[]
   bodyWeights      BodyWeightEntry[]
   settings         AppSetting?
   nutritionTarget  DailyNutritionTarget?
+  verificationTokens EmailVerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+  sessions         Session[]
 }
 
 model Exercise {
   id               String            @id @default(cuid())
+  // null = global exercise shared across all users
+  userId           String?
   name             String
   muscleGroup      String
   secondaryMuscles String?
   equipment        String?
   notes            String?
+  // isCustom retained for backwards compatibility but redundant with userId != null
   isCustom         Boolean           @default(false)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
+  user             User?             @relation("CustomExercises", fields: [userId], references: [id], onDelete: Cascade)
   routineExercises RoutineExercise[]
   workoutExercises WorkoutExercise[]
 
   @@index([muscleGroup])
-  @@index([isCustom])
+  @@index([userId])
 }
 
 model Routine {
@@ -56,6 +65,7 @@ model Routine {
   exercises   RoutineExercise[]
   workouts    Workout[]
 
+  @@unique([userId, name])
   @@index([userId, order])
 }
 
@@ -83,10 +93,11 @@ model Workout {
   status    String             @default("ACTIVE")
   notes     String?
   user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  routine   Routine?           @relation(fields: [routineId], references: [id])
+  routine   Routine?           @relation(fields: [routineId], references: [id], onDelete: SetNull)
   exercises WorkoutExercise[]
 
   @@index([userId, status])
+  @@index([userId, startedAt])
   @@index([startedAt])
 }
 
@@ -156,6 +167,8 @@ model SavedFood {
   notes      String?
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model SavedMeal {
@@ -166,6 +179,8 @@ model SavedMeal {
   createdAt DateTime        @default(now())
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   items     SavedMealItem[]
+
+  @@index([userId])
 }
 
 model SavedMealItem {
@@ -210,7 +225,48 @@ model AppSetting {
   units      String   @default("metric")
   theme      String   @default("dark")
   locale     String   @default("es")
+  timezone   String   @default("UTC")
   weeklyGoal Int      @default(4)
   updatedAt  DateTime @updatedAt
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }

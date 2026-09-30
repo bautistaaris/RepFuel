@@ -89,6 +89,7 @@ export async function toggleSet(userId: string, setId: string, completed: boolea
   let prUpdate: { isPersonalRecord: boolean; prType: string | null } = { isPersonalRecord: false, prType: null };
   if (completed) {
     const pr = await detectPR({
+      userId,
       exerciseId: set.workoutExercise.exerciseId,
       weight: set.weight,
       reps: set.reps,
@@ -96,15 +97,10 @@ export async function toggleSet(userId: string, setId: string, completed: boolea
     });
     prUpdate = { isPersonalRecord: pr.isPR, prType: pr.type ?? null };
   } else {
-    const alreadyPr = await prisma.workoutSet.findFirst({
+    const others = await prisma.workoutSet.count({
       where: { workoutExerciseId: set.workoutExerciseId, isPersonalRecord: true, NOT: { id: setId } },
     });
-    if (!alreadyPr) {
-      const others = await prisma.workoutSet.count({
-        where: { workoutExerciseId: set.workoutExerciseId, isPersonalRecord: true, NOT: { id: setId } },
-      });
-      if (others === 0) prUpdate = { isPersonalRecord: false, prType: null };
-    }
+    if (others === 0) prUpdate = { isPersonalRecord: false, prType: null };
   }
 
   await prisma.workoutSet.update({
@@ -193,8 +189,8 @@ export async function addRestSeconds(userId: string, setId: string, seconds: num
 }
 
 export async function completeWorkout(userId: string, workoutId: string) {
-  const w = await prisma.workout.findUnique({ where: { id: workoutId } });
-  if (!w || w.userId !== userId) throw new Error("Workout no encontrado");
+  const w = await prisma.workout.findFirst({ where: { id: workoutId, userId } });
+  if (!w) throw new Error("Workout no encontrado");
   if (w.status !== "ACTIVE") return;
 
   await prisma.workout.update({
@@ -204,8 +200,8 @@ export async function completeWorkout(userId: string, workoutId: string) {
 }
 
 export async function abandonWorkout(userId: string, workoutId: string) {
-  const w = await prisma.workout.findUnique({ where: { id: workoutId } });
-  if (!w || w.userId !== userId) throw new Error("Workout no encontrado");
+  const w = await prisma.workout.findFirst({ where: { id: workoutId, userId } });
+  if (!w) throw new Error("Workout no encontrado");
   await prisma.workout.update({
     where: { id: workoutId },
     data: { status: "ABANDONED", endedAt: new Date() },
@@ -235,12 +231,15 @@ export async function listWorkouts(userId: string, limit = 20, offset = 0) {
 
 export { getLastSessionData };
 
-export async function getRoutineExerciseSettings(routineId: string): Promise<Map<string, number>> {
+export async function getRoutineExerciseSettings(userId: string, routineId: string): Promise<Map<string, number>> {
+  // Defensive: ensure the routine belongs to the user.
+  const r = await prisma.routine.findFirst({ where: { id: routineId, userId }, select: { id: true } });
+  if (!r) return new Map();
   const rows = await prisma.routineExercise.findMany({
     where: { routineId },
     select: { exerciseId: true, restSeconds: true },
   });
   const map = new Map<string, number>();
-  for (const r of rows) map.set(r.exerciseId, r.restSeconds);
+  for (const row of rows) map.set(row.exerciseId, row.restSeconds);
   return map;
 }
